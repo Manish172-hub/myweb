@@ -1,19 +1,16 @@
-name: Java CI
+name: Java CI/CD Deployment
 
 on:
   push:
     branches:
-      - master
-  pull_request:
-    branches:
-      - master
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -24,7 +21,36 @@ jobs:
           cache: maven
 
       - name: Build with Maven
-        run: mvn -B clean package --file pom.xml
+        run: mvn clean package
 
-      - name: Run Tests
-        run: mvn test
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: java-app
+          path: target/*.jar
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: java-app
+          path: target/
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            pkill -f 'java -jar' || true
+            sudo ufw allow 8080
+            nohup java -jar /home/${{ secrets.SERVER_USER }}/target/*.jar > app.log 2>&1 &
+
+      - name: Open Chrome (Only for Local Runs)
+        if: runner.os == 'Linux'
+        run: google-chrome http://${{ secrets.SERVER_IP }}:8080 || echo "Can't open Chrome"
